@@ -9,9 +9,10 @@ int main(int argc, char *argv[]){
         printf("Too less command arguments, you should specific a time.\n");
         break;
     case 2:
-        // must specify a postive number
+        {// must specify a postive number
         int sleepTime = atoi(argv[1]);
         sleep(sleepTime);
+        }
         break;
     default:
         // too much argument
