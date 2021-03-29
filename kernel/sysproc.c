@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,38 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+
+// trace system call before returning to user mode
+uint64
+sys_trace(void){
+  int mask;
+
+  if(argint(0, &mask) < 0)
+    return -1;
+  
+  // no need to add an extra function in proc.c
+  // just remeber this argument in a variable
+  struct proc* p = myproc();
+  p->mask = mask;
+  return 0;
+}
+
+// show related information about the system
+uint64
+sys_sysinfo(void){
+  // read argument
+  uint64 info_ptr;
+
+  if(argaddr(0, &info_ptr) != 0)
+    return -1; 
+  struct sysinfo kernel_info;
+  kernel_info.freemem = free_mem_num();
+  kernel_info.nproc = proc_nums();
+  // just read information is okay?
+  struct proc *p = myproc();
+  if(copyout(p->pagetable, info_ptr, (char *)&kernel_info, sizeof(kernel_info)) < 0)
+    return -1;
+  return 0;
 }
