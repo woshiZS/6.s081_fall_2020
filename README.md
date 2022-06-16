@@ -1,5 +1,34 @@
 ### Lab notes
 
+#### mac下的环境配置
+
+因为之前很久做了一半，所以现在重新开始做的时候要再次配置环境，mac上配置20的环境是异常痛苦的，这里特意做一下说明。
+
+* 安装riscv-tool-chain
+
+这里不推荐使用brew安装，因为时间太久容易连接中断或者卡死。这里建议两种方法：
+
+1. 下载源码编译，可以通过git clone，也可以通过百度云盘源码下载
+2. 下载预编译好的版本（实际上这种也是可以，可以说是最快的一种方法，因为后面引发的错误其实是qemu版本过高引起的问题）
+
+**需要注意将riscv-gnu-toolchain加入到PATH中**
+
+* 安装qemu
+
+这一步分问题就比较多了，如果使用```brew install qemu```的话，默认版本在启动的时候会卡死，需要下载4.1.0的版本。
+
+```shell
+wget https://download.qemu.org/qemu-4.1.0.tar.xz
+tar xf qemu-4.1.0.tar.xz
+cd qemu-4.1.0
+./configure # 默认的bin路径会添加到/usr/local/bin下面，所以无需额外再添加路径
+make && make install # 需要等待大概一个小时左右
+```
+
+之后按照官网上的步骤确认gnu-toolchain和qemu的版本即可。
+
+在20仓库进行编译之前需要先```make clean```再make或者```make qemu```, 经测试，qemu可以正常运行。
+
 #### ping pong
 
 > need to add space or output format would not fit the criteria.
