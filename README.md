@@ -46,6 +46,12 @@ make && make install # 需要等待大概一个小时左右
   * pipes的read write阻塞模型相较于non-blocking files semantics更有效率（**虽然没懂后面啥意思**）
 * File system：将所有文件，目录以及硬件设施都抽象成为file descriptor的思想，细节没有讲。
 
+#### sleep
+
+主要是熟悉了一下用户程序的基本结构，由sh解析，fork之后（cd除外）由子程序执行，user.h包含系统调用的user接口声明和一些用户空间实现utility function，types.h主要是定义一些类型别名。
+
+另外RISC-V和MIPS还是有很多相似的地方，后期可以做一个对比表格（MIPS, RISCV, X8664)
+
 #### ping pong
 
 > need to add space or output format would not fit the criteria.
