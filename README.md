@@ -54,11 +54,15 @@ make && make install # 需要等待大概一个小时左右
 
 #### ping pong
 
-> need to add space or output format would not fit the criteria.
+> need to add space or output format would not fit the criteria.反正就稍微注意一下格式就好了。
+
+注意一个比较重要的点是，fork()之后的语句没有对pid进行区分的话，子进程和父进程都会执行。
 
 #### prime
 
-* Use a specific prime sieve. When confirming one number is a prime, other number which is divisible by that prime is not a prime and we do not need to transport it to the next process. When 
+第二次重新做，发现简单了不少，其实就是一边写，另一边读并筛。注意的点：因为要求最外面的主程序需要在所有的子进程都结束之后自己才停止，所以需要我们递归wait，直至最后一个child process读不到数字直接exit之后，他parent processes才会退出。
+
+* Use a specific prime sieve. When confirming one number is a prime, other number which is divisible by that prime is not a prime and we do not need to transport it to the next process. 
 
 > question: After parent process exits, child process is still alive?
 
@@ -84,6 +88,11 @@ after kill child process.
 
 * find
 
+再次做的时候发现有user trap, 主要是两点写错了：
+
+	1. 没有对.和..进行剔除，这样的话会一直循环递归，然后爆栈
+	1. strcmp比较.和..的时候，在前面多加一个!号，原本是不需要的，strcmp比较相同的时候才返回为0.
+
 大致思路应该还是枚举和筛选，先找出本目录下的文件进行筛选，如果是文件就进行比对，如果是目录就进行递归调用。
 
 讲一下出现的几个问题，照搬ls里面的fmtname函数，这里的问题主要是函数会返回一个定长的字符串指针，文件名不够的地方用空格补全，这样strcmp肯定不会返回0，所以删去补齐空格的memset函数就好，最后还要再末尾加上一个串尾符。
@@ -102,3 +111,22 @@ after kill child process.
 
 * 期间还试过一次按照字典序排列头文件，结果有声明依赖...
 * 其实还是比较好奇：xargs怎么忽略掉前面的指令的（得去看sh.c的代码）
+
+第二次做实验给出的解答，xargs的功能是从std输入中获取参数，并以'\n'为分隔符标识，管道只是将stdin重定向到了管道的一端file descriptor
+
+### sh代码
+
+写的顺序可能比较乱，除了涉及到系统调用的代码，其他的部分包括ulib也会详细研究一遍
+
+```c
+// ulib.c/strchr(const char *s, char c);找到s中等于c的地址并返回，如果没有找到返回null
+
+// sh.c/peek(char **ps, char* es, char *toks);
+// 其中whiteSpace为字符数组，/t /r /n /v，其中/r表示回车，意思是用/r后面的几个字符覆写前面的几个字符.
+// \v则指的是vertical tab，大概就是换一行再加一个tab缩进.
+// peek这个函数总的做的任务是检索出第一个非空字符，非空白字符strchr会返回0，直接从循环中break，然后改写ps //（字符串头的位置）并检测当前字符与所需要检测的token是否吻合，如果吻合返回true.
+
+// sh.c/struct cmd* parseexec() 未完待续
+// umalloc.c/void* malloc(uint nbytes);
+```
+
