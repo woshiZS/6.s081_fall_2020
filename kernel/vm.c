@@ -75,7 +75,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
+    pte_t *pte = &pagetable[PX(level, va)];// 对应的pte地址，就是对应层级page table取对应9位作为index的位置
     if(*pte & PTE_V) {
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
@@ -150,8 +150,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
   uint64 a, last;
   pte_t *pte;
-
-  a = PGROUNDDOWN(va);
+  
+  a = PGROUNDDOWN(va); // PGROUNDDOWN是从va开始的那页进行mapping，可能会从va之前最近接整数倍页大小的地址开始mapping.
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
