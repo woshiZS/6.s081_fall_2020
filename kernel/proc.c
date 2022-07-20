@@ -30,16 +30,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -115,11 +105,26 @@ found:
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
+  // need to map kernel stack on kernel table.
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+
+  p->kpgtbl = proc_kerneltable_init();
+  if(p->kpgtbl == 0)
+    panic("process kernel pgtbl init failed");
+  // process的内核页表要含有该进程的kernel stack，先通过p得到虚拟地址然后，通过内核页表查询其实际物理地址，然后再
+  // map到当前process的内核页表。
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc in user kpgtbl mapping");
+  uint64 kstack_va = KSTACK((int)(p - proc));
+  uvmmap(p->kpgtbl, kstack_va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = kstack_va;
+  
+
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -139,9 +144,21 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  
+  if(p->kstack){
+    pte_t *pte = walk(p->kpgtbl, p->kstack, 0);
+    if(pte == 0)
+      panic("freeproc: kstack is 0");
+    kfree((void*)PTE2PA(*pte));
+  }
+  p->kstack = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpgtbl)
+    uvmfreekpgtbl(p->kpgtbl, 0);
   p->pagetable = 0;
+  p->kpgtbl = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -473,6 +490,8 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->kpgtbl));
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -486,6 +505,7 @@ scheduler(void)
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
+      kvminithart();
       asm volatile("wfi");
     }
 #else

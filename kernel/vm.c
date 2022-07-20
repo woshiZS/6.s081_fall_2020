@@ -4,6 +4,8 @@
 #include "elf.h"
 #include "riscv.h"
 #include "defs.h"
+#include "spinlock.h"
+#include "proc.h"
 #include "fs.h"
 
 /*
@@ -45,6 +47,23 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
+pagetable_t
+proc_kerneltable_init(){
+  pagetable_t kpgtbl = uvmcreate();
+  if(kpgtbl == 0)
+    return 0;
+
+  uvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  uvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  uvmmap(kpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  uvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  uvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  uvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  uvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return kpgtbl;
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -111,6 +130,12 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
+void
+uvmmap(pagetable_t pgtbl, uint64 va, uint64 pa, uint64 sz, int perm){
+  if(mappages(pgtbl, va, sz, pa, perm) != 0)
+    panic("uvmmap");
+}
+
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
@@ -132,7 +157,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->kpgtbl, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -192,6 +217,20 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
     *pte = 0;
   }
+}
+
+void uvmfreekpgtbl(pagetable_t pgtbl, int level){
+  for(int i = 0; i < 512; ++i){
+    pte_t pte = pgtbl[i];
+    if(pte & PTE_V){
+      pgtbl[i] = 0;
+      if((pte & (PTE_R | PTE_W | PTE_X)) == 0){
+        pagetable_t nextlevelpgtbl = (pagetable_t)PTE2PA(pte);
+        uvmfreekpgtbl(nextlevelpgtbl, level);
+      }
+    }
+  }
+  kfree((void*)pgtbl);
 }
 
 // create an empty user page table.
@@ -439,4 +478,30 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void innervmprint(pagetable_t pgtbl, int level){
+  for(int i = 0; i < 512; ++i){
+    // first we need to check valid flag
+    pte_t pte = pgtbl[i];
+    if(!(pte & PTE_V))
+      continue;
+    for(int j = 0; j <= level; ++j){
+      printf("..");
+      if(j != level)
+        printf(" ");
+    }
+    uint64 child = PTE2PA(pte);
+    printf("%d: pte %p pa %p\n", i, pte, child);
+    if(level < 2)
+      innervmprint((pagetable_t)child, level + 1);
+  }
+}
+
+// print content of specified pagetable.
+void vmprint(pagetable_t targetpgtbl){
+  // 整体思路就是遍历这个页表
+  printf("page table %p\n", targetpgtbl);
+  // traverse all pte in this pagetable
+  innervmprint(targetpgtbl, 0);
 }
