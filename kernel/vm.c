@@ -88,25 +88,27 @@ copypagetable(pagetable_t src_pagetable, pagetable_t dst_pagetable, uint64 start
   if(end > PLIC)
     panic("user virtual addr is higher than PLIC");
   // end must be page aligned.
-  uint64 currva = PGROUNDUP(start);
-  for(; currva <= end; currva += PGSIZE){
-    // search startva address and map that in dst_pagetable
-    pte_t *srcpte = walk(src_pagetable, currva, 0);
-    // if(srcpte == 0 || !(*srcpte & PTE_V))
-    //   continue;
-    // mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(*srcpte), perm);
-    // 这里不能用这个，因为可能会发生remap
-    pte_t* dstpte = 0;
-    if((dstpte = walk(dst_pagetable, currva, 1)) == 0)
-      panic("kalloc for dst pgtable failed");
-    *dstpte = *srcpte & (~(PTE_U | PTE_W | PTE_X));
+  if(start < end){
+    uint64 currva = PGROUNDUP(start);
+    for(; currva <= end; currva += PGSIZE){
+      // search startva address and map that in dst_pagetable
+      pte_t *srcpte = walk(src_pagetable, currva, 0);
+      if(srcpte == 0 || !(*srcpte & PTE_V))
+        continue;
+      // mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(*srcpte), perm);
+      // 这里不能用这个，因为可能会发生remap
+      pte_t* dstpte = 0;
+      if((dstpte = walk(dst_pagetable, currva, 1)) == 0)
+        panic("kalloc for dst pgtable failed");
+      *dstpte = *srcpte & (~(PTE_U | PTE_W | PTE_X));
+    }
   }
-  // else{
-  //     if(PGROUNDUP(end) < PGROUNDUP(start)){
-  //     int npages = (PGROUNDUP(start) - PGROUNDUP(end)) / PGSIZE;
-  //     uvmunmap(dst_pagetable, PGROUNDUP(end), npages, 0);
-  //   }
-  // }
+  else{
+      if(PGROUNDUP(end) < PGROUNDUP(start)){
+      int npages = (PGROUNDUP(start) - PGROUNDUP(end)) / PGSIZE;
+      uvmunmap(dst_pagetable, PGROUNDUP(end), npages, 0);
+    }
+  }
 }
 
 

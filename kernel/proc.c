@@ -257,7 +257,7 @@ growproc(int n)
     copypagetable(p->pagetable, p->kpgtbl, p->sz, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
-    // copypagetable(p->pagetable, p->kpgtbl, sz, sz + n);
+    copypagetable(p->pagetable, p->kpgtbl, p->sz, sz);
   }
   p->sz = sz;
   return 0;

@@ -51,5 +51,113 @@ xv6只支持按页来分配内存，但是在现在更加复杂的操作系统�
 #### kernel page table per process
 
 * 首先在proc中添加对应数据结构
-* 另外就是在allocproc的时候应该给每个进程的内核页表复制之前的内核页表，这里不能直接将内容赋值过来，而应该走kvmmap，因为直接复制只有对应的第一级别页表，下两级的页表没有创建好。
 
+```c
+struct proc {
+  struct spinlock lock;
+
+  // p->lock must be held when using these:
+  enum procstate state;        // Process state
+  struct proc *parent;         // Parent process
+  void *chan;                  // If non-zero, sleeping on chan
+  int killed;                  // If non-zero, have been killed
+  int xstate;                  // Exit status to be returned to parent's wait
+  int pid;                     // Process ID
+
+  // these are private to the process, so p->lock need not be held.
+  uint64 kstack;               // Virtual address of kernel stack
+  uint64 sz;                   // Size of process memory (bytes)
+  pagetable_t pagetable;       // User page table
+  pagetable_t kpgtbl;          // Each process's kernel page table
+  struct trapframe *trapframe; // data page for trampoline.S
+  struct context context;      // swtch() here to run process
+  struct file *ofile[NOFILE];  // Open files
+  struct inode *cwd;           // Current directory
+  char name[16];               // Process name (debugging)
+};
+```
+
+
+
+* 之后就是在allocproc的时候，应该对进程的内核页表进行初始化，关于per-process kernel table的初始化，**之后再copy in里面有提到目前用户进程的虚拟地址是不能超过PLIC,所以我们只需要重新映射低于PLIC地址的部分即可，因为高于PLIC部分不会被用户修改到，所以就可以直接复制kernel table的1-511item，因为PLIC的一级页表index是0，只有第0个的pte以及下面对应的次级页表和leaf页表才需要被重新映射**
+
+```c
+pagetable_t
+proc_kerneltable_init(){
+  pagetable_t kpgtbl = uvmcreate();
+  if(kpgtbl == 0)
+    return 0;
+
+  for(int i = 1; i < 512; ++i)
+    kpgtbl[i] = kernel_pagetable[i];
+
+  uvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  uvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  uvmmap(kpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  uvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  return kpgtbl;
+}
+
+void
+uvmmap(pagetable_t pgtbl, uint64 va, uint64 pa, uint64 sz, int perm){
+  if(mappages(pgtbl, va, sz, pa, perm) != 0)
+    panic("uvmmap");
+}
+```
+
+* hint的第三点有提到kernel stack的映射需要存在这个进程的kernel pagetable，因为kernel stack的位置位于高位，在我们之前复制页表项的时候就已经包含了，所以这种写法不用做额外处理。
+
+* 另外就是进程调度的时候，需要切换对应的内核页表，其实就是加载satp寄存器，然后刷新TLB即可。这里需要注意的就是切换页表的位置，应该在切换context之前，因为切换完context之后PC存储的值就是将要执行进程的指令了，下次切换回来就得等进程自己切回来了。切换回来之后重新进入内核，再将页表换为唯一内核页表即可。
+* 另外就是释放一个进程的时候需要将进程的内核页表也回收掉，但是不能clear 物理内存，不然内核就G了
+
+```c
+void uvmfreekpgtbl(pagetable_t pgtbl){
+  pagetable_t midlevelpgtbl = (pagetable_t)PTE2PA(pgtbl[0]);
+
+  for(int i = 0; i < 512; ++i){
+    pte_t pte = midlevelpgtbl[i];
+    if(pte & PTE_V){
+      kfree((void*)PTE2PA(pte));
+    }
+    midlevelpgtbl[i] = 0;
+  }
+  kfree((void*)midlevelpgtbl);
+  kfree((void*)pgtbl);
+}
+```
+
+#### simplify copy in
+
+相对来说比较简单，仔细看copyin_new，就是把之前通过页表找物理地址的部分给去掉了，所以只要把用户页表的映射给弄到process 的kernel页表中就好了。**主要是hint中已经把所有需要更新的地方都告诉我们了，所以只需要将同步页表的function在这几个地方进行调用即可。**
+
+```c
+void
+copypagetable(pagetable_t src_pagetable, pagetable_t dst_pagetable, uint64 start, uint64 end){
+  if(end > PLIC)
+    panic("user virtual addr is higher than PLIC");
+  // end must be page aligned.
+  if(start < end){
+    uint64 currva = PGROUNDUP(start);
+    for(; currva <= end; currva += PGSIZE){
+      // search startva address and map that in dst_pagetable
+      pte_t *srcpte = walk(src_pagetable, currva, 0);
+      if(srcpte == 0 || !(*srcpte & PTE_V))
+        continue;
+      // mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(*srcpte), perm);
+      // 这里不能用这个，因为可能会发生remap
+      pte_t* dstpte = 0;
+      if((dstpte = walk(dst_pagetable, currva, 1)) == 0)
+        panic("kalloc for dst pgtable failed");
+      *dstpte = *srcpte & (~(PTE_U | PTE_W | PTE_X));
+    }
+  }
+  else{
+      if(PGROUNDUP(end) < PGROUNDUP(start)){
+      int npages = (PGROUNDUP(start) - PGROUNDUP(end)) / PGSIZE;
+      uvmunmap(dst_pagetable, PGROUNDUP(end), npages, 0);
+    }
+  }
+}
+```
+
+growproc向下增长时候我们应该同样取消对应虚拟地址在kernel table中的mapping，在网上看到许多做法都没有取消mapping，感觉这种做法还是不太合理，可能因为user 系统调用传进来的参数不会指向那个地址，所以不清理也没有关系，但是在系统设计里面，这种就属于只吃不擦，add和clear的时候应该都做同步才对。
