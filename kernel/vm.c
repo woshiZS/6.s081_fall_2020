@@ -4,8 +4,6 @@
 #include "elf.h"
 #include "riscv.h"
 #include "defs.h"
-#include "spinlock.h"
-#include "proc.h"
 #include "fs.h"
 
 /*
@@ -55,16 +53,36 @@ proc_kerneltable_init(){
   if(kpgtbl == 0)
     return 0;
 
+  for(int i = 1; i < 512; ++i)
+    kpgtbl[i] = kernel_pagetable[i];
+
   uvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
   uvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
   uvmmap(kpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
   uvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
-  uvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
-  uvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
-  uvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
-
   return kpgtbl;
 }
+
+void
+uvmmap(pagetable_t pgtbl, uint64 va, uint64 pa, uint64 sz, int perm){
+  if(mappages(pgtbl, va, sz, pa, perm) != 0)
+    panic("uvmmap");
+}
+
+void uvmfreekpgtbl(pagetable_t pgtbl){
+  pagetable_t midlevelpgtbl = (pagetable_t)PTE2PA(pgtbl[0]);
+
+  for(int i = 0; i < 512; ++i){
+    pte_t pte = midlevelpgtbl[i];
+    if(pte & PTE_V){
+      kfree((void*)PTE2PA(pte));
+    }
+    midlevelpgtbl[i] = 0;
+  }
+  kfree((void*)midlevelpgtbl);
+  kfree((void*)pgtbl);
+}
+
 
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
@@ -130,12 +148,6 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
-void
-uvmmap(pagetable_t pgtbl, uint64 va, uint64 pa, uint64 sz, int perm){
-  if(mappages(pgtbl, va, sz, pa, perm) != 0)
-    panic("uvmmap");
-}
-
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
@@ -157,7 +169,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(myproc()->kpgtbl, va, 0);
+  pte = walk(kernel_pagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -217,20 +229,6 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     }
     *pte = 0;
   }
-}
-
-void uvmfreekpgtbl(pagetable_t pgtbl, int level){
-  for(int i = 0; i < 512; ++i){
-    pte_t pte = pgtbl[i];
-    if(pte & PTE_V){
-      pgtbl[i] = 0;
-      if((pte & (PTE_R | PTE_W | PTE_X)) == 0){
-        pagetable_t nextlevelpgtbl = (pagetable_t)PTE2PA(pte);
-        uvmfreekpgtbl(nextlevelpgtbl, level);
-      }
-    }
-  }
-  kfree((void*)pgtbl);
 }
 
 // create an empty user page table.
