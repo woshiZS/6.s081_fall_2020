@@ -183,6 +183,7 @@ void            vmprint(pagetable_t);
 pagetable_t     proc_kerneltable_init();
 void            uvmmap(pagetable_t , uint64 , uint64 , uint64 , int );
 void            uvmfreekpgtbl(pagetable_t);
+void            copypagetable(pagetable_t src_pagetable, pagetable_t dst_pagetable, uint64 start, uint64 end);
 
 // plic.c
 void            plicinit(void);
