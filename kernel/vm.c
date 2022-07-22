@@ -85,15 +85,25 @@ void uvmfreekpgtbl(pagetable_t pgtbl){
 
 void
 copypagetable(pagetable_t src_pagetable, pagetable_t dst_pagetable, uint64 start, uint64 end){
+  if(start > PLIC || end > PLIC)
+    return;
   // end must be page aligned.
-  uint64 currva = PGROUNDDOWN(start);
-  for(; currva <= end; currva += PGSIZE){
-    // search startva address and map that in dst_pagetable
-    pte_t srcpte = walk(src_pagetable, currva, 0);
-    if(srcpte == 0 || !(srcpte & PTE_V))
-      continue;
-    int perm = srcpte & (~(PTE_U | PTE_W | PTE_X));
-    mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(srcpte), perm);
+  if(start < end){
+    uint64 currva = PGROUNDUP(start);
+    for(; currva <= end; currva += PGSIZE){
+      // search startva address and map that in dst_pagetable
+      pte_t srcpte = walk(src_pagetable, currva, 0);
+      if(srcpte == 0 || !(srcpte & PTE_V))
+        continue;
+      int perm = srcpte & (~(PTE_U | PTE_W | PTE_X));
+      mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(srcpte), perm);
+    }
+  }
+  else{
+    if(PGROUNDUP(end) < PGROUNDUP(start)){
+    int npages = (PGROUNDUP(start) - PGROUNDUP(end)) / PGSIZE;
+    uvmunmap(dst_pagetable, PGROUNDUP(end), npages, 0);
+  }
   }
 }
 
