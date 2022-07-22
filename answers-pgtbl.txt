@@ -1,0 +1,7 @@
+Question1:
+    page 0 is text and data that init will use,
+    page 2 is the user stack of this process
+    we can't read/write page 1 cause it is a guard page.
+
+Question2:
+    To prevent overflow, if (srcva + sz) < srcva happens, there must be an overflow.

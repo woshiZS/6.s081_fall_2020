@@ -85,26 +85,28 @@ void uvmfreekpgtbl(pagetable_t pgtbl){
 
 void
 copypagetable(pagetable_t src_pagetable, pagetable_t dst_pagetable, uint64 start, uint64 end){
-  if(start > PLIC || end > PLIC)
-    return;
+  if(end > PLIC)
+    panic("user virtual addr is higher than PLIC");
   // end must be page aligned.
-  if(start < end){
-    uint64 currva = PGROUNDUP(start);
-    for(; currva <= end; currva += PGSIZE){
-      // search startva address and map that in dst_pagetable
-      pte_t srcpte = walk(src_pagetable, currva, 0);
-      if(srcpte == 0 || !(srcpte & PTE_V))
-        continue;
-      int perm = srcpte & (~(PTE_U | PTE_W | PTE_X));
-      mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(srcpte), perm);
-    }
+  uint64 currva = PGROUNDUP(start);
+  for(; currva <= end; currva += PGSIZE){
+    // search startva address and map that in dst_pagetable
+    pte_t *srcpte = walk(src_pagetable, currva, 0);
+    // if(srcpte == 0 || !(*srcpte & PTE_V))
+    //   continue;
+    // mappages(dst_pagetable, currva, PGSIZE, (uint64)PTE2PA(*srcpte), perm);
+    // 这里不能用这个，因为可能会发生remap
+    pte_t* dstpte = 0;
+    if((dstpte = walk(dst_pagetable, currva, 1)) == 0)
+      panic("kalloc for dst pgtable failed");
+    *dstpte = *srcpte & (~(PTE_U | PTE_W | PTE_X));
   }
-  else{
-    if(PGROUNDUP(end) < PGROUNDUP(start)){
-    int npages = (PGROUNDUP(start) - PGROUNDUP(end)) / PGSIZE;
-    uvmunmap(dst_pagetable, PGROUNDUP(end), npages, 0);
-  }
-  }
+  // else{
+  //     if(PGROUNDUP(end) < PGROUNDUP(start)){
+  //     int npages = (PGROUNDUP(start) - PGROUNDUP(end)) / PGSIZE;
+  //     uvmunmap(dst_pagetable, PGROUNDUP(end), npages, 0);
+  //   }
+  // }
 }
 
 
@@ -440,23 +442,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -466,40 +452,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
-
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 void innervmprint(pagetable_t pgtbl, int level){
