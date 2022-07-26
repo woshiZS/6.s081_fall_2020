@@ -134,13 +134,14 @@ printfinit(void)
 }
 
 void backtrace(){
-  uint64 fp, ra, upperbound, lowerbound;
+  uint64 fp, ra, upperbound;
   fp = r_fp();
   upperbound = PGROUNDUP(fp);
-  lowerbound = PGROUNDDOWN(fp);
-  while(fp < upperbound && fp > lowerbound){
+  printf("The upper bound is %p\n", upperbound);
+  while(fp < upperbound){
     ra = *(uint64 *)(fp - 8);
-    printf("%p\n", ra);
+    printf("%p   %p\n", ra, fp);
     fp = *(uint64 *)(fp - 16);
   }
+  printf("The final fp is %p\n", fp);
 }
