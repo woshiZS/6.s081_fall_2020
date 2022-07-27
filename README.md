@@ -37,3 +37,10 @@
 ![image-20220726154754482](./img/backtrace_fp_result.png)
 
 我们可以看到final fp和这个栈帧的顶部是相同的，猜想成立（之所以用printf还是因为gdb有时候断不到）
+
+#### alarm
+
+* 总体来说算是比较直接，学习下trampoline.S的写法，大致上就没有问题
+* 这个算是一个用户态的切换，实际上还是改变sepc寄存器的值，借助userret跳转到需要的地方
+* 另外就是在trap里面，时钟中断的yield被我注释掉之后有一个test一直死循环了，因为yield其实是调度的含义，让当前进程放弃cpu，从而让scheduler 调度其他的进程执行，如果这里注释掉，那么preempt test中子进程有一段死循环的子进程会一直占用cpu，导致最后卡死。
+* 另外这里还有一个问题是，如果我只复制caller-saved register, 最后countfree会报错，但是所有的test都可以通过，这里还是比较迷惑。
