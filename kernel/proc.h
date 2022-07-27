@@ -103,4 +103,41 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int interval;                // Interval used to interrupt this process.
+  int curtick;                 // current tick after last call to handler.
+  int isinhandler;             // mask check if p is in handler and not return yet.
+  void (*inter_func)();        // Pointers to func when ticks equals to interval
+  // all register needed in sig alarm
+  uint64 ura;
+  uint64 usp;
+  uint64 ugp;
+  uint64 utp;
+  uint64 ut0;
+  uint64 ut1;
+  uint64 ut2;
+  uint64 us0;
+  uint64 us1;
+  uint64 ua0;
+  uint64 ua1;
+  uint64 ua2;
+  uint64 ua3;
+  uint64 ua4;
+  uint64 ua5;
+  uint64 ua6;
+  uint64 ua7;
+  uint64 us2;
+  uint64 us3;
+  uint64 us4;
+  uint64 us5;
+  uint64 us6;
+  uint64 us7;
+  uint64 us8;
+  uint64 us9;
+  uint64 us10;
+  uint64 us11;
+  uint64 ut3;
+  uint64 ut4;
+  uint64 ut5;
+  uint64 ut6;
+  uint64 uepc;
 };

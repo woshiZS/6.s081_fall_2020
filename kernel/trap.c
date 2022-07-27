@@ -46,6 +46,12 @@ usertrap(void)
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
+
+  // p->curtick += 1;
+  // if(p->curtick == p->interval){
+  //   p->curtick = 0;
+  //   (*p->inter_func)();
+  // }
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
@@ -77,8 +83,53 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    // interval can not be zero and can not call handler again if a handler hasn't return yet.
+    if(p->interval && !p->isinhandler){
+      p->curtick++;
+      if(p->curtick == p->interval){
+        // save registers and jump to handler.
+        p->curtick = 0;
+        p->isinhandler = 1;
+        // save registers.
+        p->ura = p->trapframe->ra;
+        p->usp = p->trapframe->sp;
+        p->ugp = p->trapframe->gp;
+        p->utp = p->trapframe->tp;
+        p->ut0 = p->trapframe->t0;
+        p->ut1 = p->trapframe->t1;
+        p->ut2 = p->trapframe->t2;
+        p->us0 = p->trapframe->s0;
+        p->us1 = p->trapframe->s1;
+        p->ua0 = p->trapframe->a0;
+        p->ua1 = p->trapframe->a1;
+        p->ua2 = p->trapframe->a2;
+        p->ua3 = p->trapframe->a3;
+        p->ua4 = p->trapframe->a4;
+        p->ua5 = p->trapframe->a5;
+        p->ua6 = p->trapframe->a6;
+        p->ua7 = p->trapframe->a7;
+        p->us2 = p->trapframe->s2;
+        p->us3 = p->trapframe->s3;
+        p->us4 = p->trapframe->s4;
+        p->us5 = p->trapframe->s5;
+        p->us6 = p->trapframe->s6;
+        p->us7 = p->trapframe->s7;
+        p->us8 = p->trapframe->s8;
+        p->us9 = p->trapframe->s9;
+        p->us10 = p->trapframe->s10;
+        p->us11 = p->trapframe->s11;
+        p->ut3 = p->trapframe->t3;
+        p->ut4 = p->trapframe->t4;
+        p->ut5 = p->trapframe->t5;
+        p->ut6 = p->trapframe->t6;
+        p->uepc = p->trapframe->epc;
+        // p->sepc should set to handler address
+        p->trapframe->epc = (uint64)p->inter_func;
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }
