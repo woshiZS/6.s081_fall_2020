@@ -68,9 +68,21 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    uint64 vaddr = r_stval();
+    uint64 cause = r_scause();
+    if((cause == 13 || cause == 15) && vaddr < p->sz && vaddr >= PGROUNDDOWN(p->trapframe->sp)){
+      // mappage at r_stval()
+      uint64 lowerbound = PGROUNDDOWN(vaddr);
+      if(uvmalloc(p->pagetable, lowerbound, lowerbound + PGSIZE) == 0){
+        // printf("lazy allocation failed. Process will be killed.\n");
+        p->killed = 1;
+      }
+    }
+    else{
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
   }
 
   if(p->killed)
