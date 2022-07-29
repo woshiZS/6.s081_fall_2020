@@ -68,9 +68,28 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    // check if it is a cow page.
+    uint64 va = r_stval();
+    struct proc* p = myproc();
+    pte_t* pte = walk(p->pagetable, va, 0);
+    if(pte && ((*pte) & PTE_COW)){
+      // this is cow page fault, we should allocate a new physical page and 
+      // mark new pte as writable, if kalloc failed, we should kill this process.
+      char* mem;
+      if((mem == kalloc()) == 0)
+        exit(-1);
+      uint64 oldpa = PTE2PA(*pte);
+      memmove(mem, (char *)oldpa, PGSIZE);
+      // map to this new pte as writable and set writable and remove cow flag
+      *pte = (PA2PTE(mem) & PTE_FLAGS(*pte)) & (~PTE_COW) | PTE_W;
+      // if ref cnt is 0, we should recycle this page.
+      kfree((void*)oldpa);
+    }
+    else{
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), va);
+      p->killed = 1;
+    }
   }
 
   if(p->killed)
