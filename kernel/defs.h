@@ -64,6 +64,7 @@ void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 int             changepageref(uint64, int);
+void            resetpageref();
 
 // log.c
 void            initlog(int, struct superblock*);

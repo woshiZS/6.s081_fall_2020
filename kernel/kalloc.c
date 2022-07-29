@@ -23,12 +23,16 @@ struct {
   struct run *freelist;
 } kmem;
 
-int pagerefcnt[32768];
+struct{
+  struct spinlock lock;
+  int pagerefcnt[32768];
+}pgref;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&pgref.lock, "pgref");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -37,10 +41,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  memset(pagerefcnt, 0, sizeof(pagerefcnt));
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
     kfree(p);
   }
+  resetpageref();
 }
 
 // Free the page of physical memory pointed at by v,
@@ -56,7 +60,7 @@ kfree(void *pa)
     panic("kfree");
 
   // checkrefCnt;
-  if(changepageref(pa, -1) > 0)
+  if(changepageref((uint64)pa, -1) > 0)
     return;
 
   // Fill with junk to catch dangling refs.
@@ -86,7 +90,7 @@ kalloc(void)
 
   if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
-    addpageref((uint64)r, 1);
+    changepageref((uint64)r, 1);
   }
   return (void*)r;
 }
@@ -94,12 +98,16 @@ kalloc(void)
 int
 changepageref(uint64 pa, int val){
   int index = (PGROUNDDOWN(pa) - KERNBASE) / PGSIZE;
-  pagerefcnt[index] += val;
-  return pagerefcnt[index];
+  acquire(&pgref.lock);
+  pgref.pagerefcnt[index] += val;
+  int ret = pgref.pagerefcnt[index];
+  release(&pgref.lock);
+  return ret;
 }
 
 void
-resetpageref(uint64 pa){
-  int index = (PGROUNDDOWN(pa) - KERNBASE) / PGSIZE;
-  pagerefcnt[index] = 0;
+resetpageref(){
+  acquire(&pgref.lock);
+  memset(pgref.pagerefcnt, 0, sizeof(pgref.pagerefcnt));
+  release(&pgref.lock);
 }

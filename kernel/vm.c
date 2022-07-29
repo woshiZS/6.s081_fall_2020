@@ -111,6 +111,31 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
+uint64
+walkaddrforcopyout(pagetable_t pagetable, uint64 va){
+  pte_t* pte;
+
+  if(va >= MAXVA)
+    return 0;
+  
+  pte = walk(pagetable, va, 0);
+  if(!pte || !(*pte & PTE_V) || !(*pte & PTE_U))
+    return 0;
+  // check if it is cow page.
+  if((*pte & PTE_COW)){
+    char* mem;
+    if((mem = kalloc()) == 0)
+      return 0;
+    uint64 oldpa = PTE2PA(*pte);
+    memmove(mem, (char *)oldpa, PGSIZE);
+    // map to this new pte as writable and set writable and remove cow flag
+    *pte = ((PA2PTE(mem) | PTE_FLAGS(*pte)) & (~PTE_COW)) | PTE_W;
+    // if ref cnt is 0, we should recycle this page.
+    kfree((void*)oldpa);
+  }
+  return PTE2PA(*pte);
+}
+
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
@@ -311,7 +336,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -329,7 +354,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       goto err;
     }
     // not writable and cow page in old pgtable
-    *pte &= flags;
+    *pte = PA2PTE(pa) | flags;
     // add ref count 
     changepageref(pa, 1);
   }
@@ -363,7 +388,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
+    // we should first check pte here, if it is cow page, we should handle this condition like what we do in usertrap.
+    pa0 = walkaddrforcopyout(pagetable, va0);
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
