@@ -1,0 +1,3 @@
+Why key is missing in hash table?
+ans: Because insert operation is not locked, if 2 insert op are happen at the same time. One node will
+be lost. 
